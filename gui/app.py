@@ -2,7 +2,7 @@ import sys
 
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import *
-from deckbuilder.config import Backend
+from backend.config import Backend
 from gui.search_widget import Search
 
 
@@ -11,8 +11,6 @@ class App(QMainWindow):
         super(App, self).__init__()
         self.setWindowTitle("EDH Deckstealer Utility")
         self.backend = Backend()
-
-
 
         menu = self.menuBar()
         file_menu = menu.addMenu("&Configure")
@@ -25,7 +23,6 @@ class App(QMainWindow):
         tab_widget = QTabWidget(self)
         tab_widget.addTab(Search(tab_widget), "Commander Search")
         self.setCentralWidget(tab_widget)
-
 
     def build_backend_db(self, s):
         print("open window to build backend", s)

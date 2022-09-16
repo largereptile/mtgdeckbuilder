@@ -7,12 +7,14 @@ import requests
 
 import scrython
 
+
 class Backend:
     def __init__(self):
         self.db = sqlite3.connect("../mtg.db")
         self.c = self.db.cursor()
 
     def setup_edh_decks(self, deck_csv_path):
+        self.c.execute(f"DROP TABLE IF EXISTS decks")
         csvreader = csv.reader(open(deck_csv_path, "r", encoding="utf8"))
         first = True
         for x, row in enumerate(csvreader):
@@ -37,9 +39,10 @@ class Backend:
                 total_cards = int(row[6]) + int(row[7]) + int(row[8]) + int(row[9]) + int(row[10]) + int(row[11])
                 self.c.execute(f"INSERT INTO decks VALUES (?, ?, ?, ?, ?, ?, ?)", (x, row[2], row[3], row[14], row[0], total_cards, row[16]))
         self.db.commit()
-        print("done decks")
+        return True
 
     def setup_all_cards(self):
+        self.c.execute(f"DROP TABLE IF EXISTS cards")
         self.c.execute("""create table if not exists cards
                     (
                         card_id integer not null
@@ -92,9 +95,11 @@ class Backend:
             count += 1
 
         self.db.commit()
-        print("done cards")
+        return True
 
     def setup_edh_cards(self, card_csv_path):
+        self.c.execute(f"DROP TABLE IF EXISTS deck_card")
+        self.c.execute(f"DROP TABLE IF EXISTS deck_card_ids")
         csvreader = csv.reader(open(card_csv_path, "r", encoding="utf8"))
         first = True
         for x, row in enumerate(csvreader):
@@ -116,16 +121,17 @@ class Backend:
                     """)
         self.c.execute("create index if not exists deck_card_ids_deck_id_card_id_index on deck_card_ids (deck_id, card_id)")
         self.c.execute("INSERT INTO deck_card_ids select decks.deck_id, c.card_id from decks inner join deck_card dc on decks.url = dc.deck_id inner join cards c on c.name = dc.card_id")
+        # fix commander not being in some of the decks
         # c.execute("INSERT INTO deck_card_ids select decks.deck_id, c.card_id from decks inner join cards c on decks.commander = c.name")
 
-        print("card ids updated")
         self.db.commit()
-        print("done edh cards")
+        return True
 
-    def setup_collection(self, csv_name):
+    def update_collection(self, csv_name):
         csvreader = csv.reader(open(csv_name, "r", encoding="utf8"))
         first = True
         card_set = set()
+        self.c.execute("UPDATE cards SET owned=?", (0,))
         for row in csvreader:
             if first:
                 first = False
@@ -136,7 +142,7 @@ class Backend:
         for card in card_set:
             self.c.execute("UPDATE cards SET owned=? WHERE name=?", (1, card))
         self.db.commit()
-        print("done collection")
+        return True
 
     def setup_priced_deck_summary(self):
         self.c.execute("create table if not exists temp_table (d_id integer, price integer, u_count integer);")
@@ -169,7 +175,7 @@ class Backend:
         self.c.execute("drop table temp_table")
         self.c.execute("drop table decks")
         print("done decks")
-        self.db.commit()
+        return True
 
     def find_decks(self, commander=None, precon=False, max_price=10000):
         if commander:
@@ -186,10 +192,10 @@ class Backend:
         cards = self.c.execute("select * from deck_card_ids inner join cards on cards.card_id = deck_card_ids.card_id where cards.owned=0 and deck_id=?", (deck_id,)).fetchall()
         return cards
 
-    def setup(self, deck_csv="decks.csv", card_csv="cards.csv", inventory="Inventory_ito_2022.July.08.csv"):
-       # self.setup_edh_decks(deck_csv)
-       # self.setup_all_cards()
-        #self.setup_edh_cards(card_csv)
-        self.setup_collection(inventory)
+    def rebuild(self, deck_csv="decks.csv", card_csv="cards.csv", inventory="Inventory_ito_2022.July.08.csv"):
+        self.setup_edh_decks(deck_csv)
+        self.setup_all_cards()
+        self.setup_edh_cards(card_csv)
+        self.update_collection(inventory)
         self.setup_priced_deck_summary()
         return True

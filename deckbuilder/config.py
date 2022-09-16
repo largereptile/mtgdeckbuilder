@@ -9,7 +9,7 @@ import scrython
 
 class Backend:
     def __init__(self):
-        self.db = sqlite3.connect("mtg.db")
+        self.db = sqlite3.connect("../mtg.db")
         self.c = self.db.cursor()
 
     def setup_edh_decks(self, deck_csv_path):

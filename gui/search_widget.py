@@ -1,11 +1,8 @@
-import sys
-import random
-
 import requests
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
-from config import Backend
+from deckbuilder.config import Backend
 
 
 class Search(QWidget):

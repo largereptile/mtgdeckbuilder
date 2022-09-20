@@ -2,3 +2,4 @@ identifier.sqlite
 *.db
 venv
 csvs
+.idea

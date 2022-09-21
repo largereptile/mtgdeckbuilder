@@ -10,12 +10,19 @@ import scrython
 
 class Backend:
     def __init__(self):
-        self.db = sqlite3.connect("../mtg.db")
+        self.db = sqlite3.connect("mtg.db")
         self.c = self.db.cursor()
 
-    def setup_edh_decks(self, deck_csv_path):
+    def is_set_up(self):
+        c_exist = self.c.execute("select count(name) from sqlite_master where type='table' and name='cards'").fetchone()
+        d_exist = self.c.execute("select count(name) from sqlite_master where type='table' and name='deck_collection'").fetchone()
+        did_exist = self.c.execute("select count(name) from sqlite_master where type='table' and name='deck_card_ids'").fetchone()
+        return c_exist and d_exist and did_exist
+
+    def setup_edh_decks(self, deck_csv_path, current_message):
         self.c.execute(f"DROP TABLE IF EXISTS decks")
         csvreader = csv.reader(open(deck_csv_path, "r", encoding="utf8"))
+        current_message.emit("Creating decks table")
         first = True
         for x, row in enumerate(csvreader):
             if first:
@@ -33,15 +40,18 @@ class Backend:
                                     dprecon integer
                                 );
                             """)
+                current_message.emit("Populating decks table")
                 self.c.execute("create index if not exists decks_deck_id_index on decks (deck_id);")
                 self.c.execute("create index if not exists decks_deck_url_index on decks (url);")
             else:
                 total_cards = int(row[6]) + int(row[7]) + int(row[8]) + int(row[9]) + int(row[10]) + int(row[11])
                 self.c.execute(f"INSERT INTO decks VALUES (?, ?, ?, ?, ?, ?, ?)", (x, row[2], row[3], row[14], row[0], total_cards, row[16]))
+        current_message.emit("Finished populating decks table")
         self.db.commit()
         return True
 
-    def setup_all_cards(self):
+    def setup_all_cards(self, current_message):
+        current_message.emit("Creating cards table")
         self.c.execute(f"DROP TABLE IF EXISTS cards")
         self.c.execute("""create table if not exists cards
                     (
@@ -58,14 +68,15 @@ class Backend:
                 """)
         self.c.execute("create index if not exists cards_card_id_index on cards (card_id);")
         self.c.execute("create index if not exists cards_card_name_index on cards (name);")
+        current_message.emit("Downloading cards from Scryfall")
         default_cards_url = scrython.bulk_data.BulkData().data()[2]["download_uri"]
         default_cards = json.loads(requests.get(default_cards_url).text)
+        current_message.emit("Processing cards from Scryfall")
         card_list = collections.defaultdict(list)
         urls = collections.defaultdict(str)
         cmcs = collections.defaultdict(str)
         colours = collections.defaultdict(str)
         for card in default_cards:
-            print(card)
             name = card["name"]
             if " // " in name:
                 name = name.split(" // ")[0]
@@ -86,6 +97,7 @@ class Backend:
             card_list[name].append(int(float(usd) * 100))
 
         count = 0
+        current_message.emit("Populating cards table")
         for name, prices in card_list.items():
             num_nonzero = len([x for x in prices if x > 0])
             price = 0
@@ -94,14 +106,16 @@ class Backend:
             self.c.execute("INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?)", (count, name, int(price), 0, colours[name], urls[name], cmcs[name]))
             count += 1
 
+        current_message.emit("Cards table populated")
         self.db.commit()
         return True
 
-    def setup_edh_cards(self, card_csv_path):
+    def setup_edh_cards(self, card_csv_path, current_message):
         self.c.execute(f"DROP TABLE IF EXISTS deck_card")
         self.c.execute(f"DROP TABLE IF EXISTS deck_card_ids")
         csvreader = csv.reader(open(card_csv_path, "r", encoding="utf8"))
         first = True
+        current_message.emit("Creating deck/card pair table")
         for x, row in enumerate(csvreader):
             if first:
                 first = False
@@ -109,7 +123,7 @@ class Backend:
             else:
                 if row[1].lower() not in ["island", "mountain", "swamp", "forest", "plains"]:
                     self.c.execute("INSERT INTO deck_card VALUES (?, ?)", (row[0], row[1]))
-        print("csv in table")
+        current_message.emit("Converting deck/card table to int IDs")
         self.db.commit()
         self.c.execute("""create table if not exists deck_card_ids
                     (
@@ -123,14 +137,15 @@ class Backend:
         self.c.execute("INSERT INTO deck_card_ids select decks.deck_id, c.card_id from decks inner join deck_card dc on decks.url = dc.deck_id inner join cards c on c.name = dc.card_id")
         # fix commander not being in some of the decks
         # c.execute("INSERT INTO deck_card_ids select decks.deck_id, c.card_id from decks inner join cards c on decks.commander = c.name")
-
+        current_message.emit("Deck/Card ID pairs table populated")
         self.db.commit()
         return True
 
-    def update_collection(self, csv_name):
+    def update_collection(self, csv_name, current_message):
         csvreader = csv.reader(open(csv_name, "r", encoding="utf8"))
         first = True
         card_set = set()
+        current_message.emit("Marking owned cards in cards table")
         self.c.execute("UPDATE cards SET owned=?", (0,))
         for row in csvreader:
             if first:
@@ -144,7 +159,8 @@ class Backend:
         self.db.commit()
         return True
 
-    def setup_priced_deck_summary(self):
+    def setup_priced_deck_summary(self, current_message):
+        current_message.emit("Final processing")
         self.c.execute("create table if not exists temp_table (d_id integer, price integer, u_count integer);")
         self.c.execute("""insert into temp_table
                     select dci.deck_id as d_id, sum(price), count(owned)
@@ -174,7 +190,8 @@ class Backend:
                     on temp.d_id = d.deck_id""")
         self.c.execute("drop table temp_table")
         self.c.execute("drop table decks")
-        print("done decks")
+        current_message.emit("Done")
+        self.db.commit()
         return True
 
     def find_decks(self, commander=None, precon=False, max_price=10000):
@@ -192,10 +209,10 @@ class Backend:
         cards = self.c.execute("select * from deck_card_ids inner join cards on cards.card_id = deck_card_ids.card_id where cards.owned=0 and deck_id=?", (deck_id,)).fetchall()
         return cards
 
-    def rebuild(self, deck_csv="decks.csv", card_csv="cards.csv", inventory="Inventory_ito_2022.July.08.csv"):
-        self.setup_edh_decks(deck_csv)
-        self.setup_all_cards()
-        self.setup_edh_cards(card_csv)
-        self.update_collection(inventory)
-        self.setup_priced_deck_summary()
-        return True
+    # def rebuild(self, deck_csv="decks.csv", card_csv="cards.csv", inventory="Inventory_ito_2022.July.08.csv"):
+    #     self.setup_edh_decks(deck_csv)
+    #     self.setup_all_cards()
+    #     self.setup_edh_cards(card_csv)
+    #     self.update_collection(inventory)
+    #     self.setup_priced_deck_summary()
+    #     return True

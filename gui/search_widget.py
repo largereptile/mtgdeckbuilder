@@ -65,6 +65,8 @@ class Search(QWidget):
         self.main_grid.addWidget(table, 2, 0)
 
     def search_decks(self):
+        if not self.backend.is_set_up():
+            return
         commander = self.commander_field.text()
         max_price = int(self.max_price_field.text()) if self.max_price_field.text() else 10000
         precon = self.precon_field.isChecked()

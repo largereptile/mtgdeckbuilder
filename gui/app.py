@@ -4,6 +4,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import *
 from backend.config import Backend
 from gui.search_widget import Search
+from gui.build_db_widget import DBBuild
 
 
 class App(QMainWindow):
@@ -25,8 +26,8 @@ class App(QMainWindow):
         self.setCentralWidget(tab_widget)
 
     def build_backend_db(self, s):
-        print("open window to build backend", s)
-
+        build_window = DBBuild(self)
+        build_window.show()
 
 
 if __name__ == "__main__":
